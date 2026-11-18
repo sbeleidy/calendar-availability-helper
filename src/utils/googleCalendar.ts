@@ -14,6 +14,10 @@ declare global {
               error?: string;
               error_description?: string;
             }) => void;
+            error_callback?: (error: {
+              type: string;
+              message?: string;
+            }) => void;
           }) => {
             requestAccessToken: (opts?: { prompt?: string }) => void;
           };
@@ -56,10 +60,13 @@ export function requestGoogleAccessToken(
       return;
     }
 
+    let settled = false;
     const tokenClient = window.google.accounts.oauth2.initTokenClient({
       client_id: clientId.trim(),
       scope: GOOGLE_CALENDAR_SCOPE,
       callback: (resp) => {
+        if (settled) return;
+        settled = true;
         if (resp.error || !resp.access_token) {
           reject(new Error(resp.error_description || resp.error || 'Google sign-in failed.'));
           return;
@@ -69,6 +76,17 @@ export function requestGoogleAccessToken(
           accessToken: resp.access_token,
           expiresAt: Date.now() + expiresInSec * 1000,
         });
+      },
+      error_callback: (err) => {
+        if (settled) return;
+        settled = true;
+        if (err.type === 'popup_closed') {
+          reject(new Error('Sign-in popup was closed before completing.'));
+        } else if (err.type === 'popup_failed_to_open') {
+          reject(new Error('Sign-in popup was blocked by your browser. Please allow popups for this site.'));
+        } else {
+          reject(new Error(err.message || `Google sign-in error (${err.type}).`));
+        }
       },
     });
 
