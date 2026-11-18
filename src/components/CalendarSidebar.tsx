@@ -1,4 +1,5 @@
 import { Checkbox } from '@base-ui/react/checkbox';
+import { Popover } from '@base-ui/react/popover';
 import { Select } from '@base-ui/react/select';
 import { Switch } from '@base-ui/react/switch';
 import {
@@ -16,9 +17,31 @@ import { formatMinutesLabel } from '../utils/temporal';
 
 const WORK_TIME_OPTIONS = Array.from({ length: 33 }, (_, i) => 6 * 60 + i * 30); // 6:00 AM .. 10:00 PM
 
+const CALENDAR_COLOR_PRESETS = [
+  '#2563eb',
+  '#7c3aed',
+  '#db2777',
+  '#ea580c',
+  '#059669',
+  '#0891b2',
+  '#dc2626',
+  '#4f46e5',
+];
+
+export const HIGHLIGHT_PRESETS = [
+  { id: 'emerald', label: 'Emerald', swatch: '#10b981' },
+  { id: 'blue', label: 'Blue', swatch: '#3b82f6' },
+  { id: 'violet', label: 'Violet', swatch: '#8b5cf6' },
+  { id: 'amber', label: 'Amber', swatch: '#f59e0b' },
+  { id: 'rose', label: 'Rose', swatch: '#f43f5e' },
+] as const;
+
+export type HighlightColorId = (typeof HIGHLIGHT_PRESETS)[number]['id'];
+
 interface CalendarSidebarProps {
   calendars: CalendarSource[];
   onToggleCalendar: (id: string) => void;
+  onChangeCalendarColor: (id: string, color: string) => void;
   onRemoveCalendar: (id: string) => void;
   onOpenConnect: () => void;
   onRefresh: () => void;
@@ -36,11 +59,16 @@ interface CalendarSidebarProps {
   onChangeWorkStart: (min: number) => void;
   onChangeWorkEnd: (min: number) => void;
   onFillFreeWeekdays: () => void;
+  darkMode: boolean;
+  onToggleDarkMode: (val: boolean) => void;
+  highlightColor: HighlightColorId;
+  onChangeHighlightColor: (id: HighlightColorId) => void;
 }
 
 export function CalendarSidebar({
   calendars,
   onToggleCalendar,
+  onChangeCalendarColor,
   onRemoveCalendar,
   onOpenConnect,
   onRefresh,
@@ -58,6 +86,10 @@ export function CalendarSidebar({
   onChangeWorkStart,
   onChangeWorkEnd,
   onFillFreeWeekdays,
+  darkMode,
+  onToggleDarkMode,
+  highlightColor,
+  onChangeHighlightColor,
 }: CalendarSidebarProps) {
   const totalMinutes = blocks.reduce(
     (acc, b) => acc + Math.round((b.endMs - b.startMs) / 60000),
@@ -118,6 +150,42 @@ export function CalendarSidebar({
                   {cal.name}
                 </span>
               </label>
+
+              <Popover.Root>
+                <Popover.Trigger
+                  className="cal-color-btn"
+                  style={{ backgroundColor: cal.color }}
+                  title={`Change ${cal.name} color`}
+                  aria-label={`Change ${cal.name} color`}
+                />
+                <Popover.Portal>
+                  <Popover.Positioner className="base-popover-positioner" sideOffset={6} align="start">
+                    <Popover.Popup className="cal-color-popover">
+                      <div className="color-picker-row">
+                        {CALENDAR_COLOR_PRESETS.map((c) => (
+                          <button
+                            key={c}
+                            type="button"
+                            className={`color-swatch ${cal.color.toLowerCase() === c ? 'is-selected' : ''}`}
+                            style={{ backgroundColor: c }}
+                            onClick={() => onChangeCalendarColor(cal.id, c)}
+                            aria-label={`Set color ${c}`}
+                          />
+                        ))}
+                      </div>
+                      <label className="cal-color-custom-row">
+                        <span>Custom color</span>
+                        <input
+                          type="color"
+                          className="cal-color-native-input"
+                          value={cal.color}
+                          onChange={(e) => onChangeCalendarColor(cal.id, e.target.value)}
+                        />
+                      </label>
+                    </Popover.Popup>
+                  </Popover.Positioner>
+                </Popover.Portal>
+              </Popover.Root>
 
               {cal.provider !== 'google-oauth' && (
                 <button
@@ -240,7 +308,34 @@ export function CalendarSidebar({
       <div className="sidebar-divider" />
 
       <div className="sidebar-section">
-        <h2 className="sidebar-heading">View Options</h2>
+        <h2 className="sidebar-heading">Appearance &amp; View</h2>
+        <div className="switch-row">
+          <span className="switch-label">Dark mode</span>
+          <Switch.Root
+            checked={darkMode}
+            onCheckedChange={onToggleDarkMode}
+            className="base-switch"
+            aria-label="Dark mode"
+          >
+            <Switch.Thumb className="base-switch-thumb" />
+          </Switch.Root>
+        </div>
+        <div className="highlight-color-group">
+          <span className="switch-label">Highlight color</span>
+          <div className="color-picker-row">
+            {HIGHLIGHT_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                className={`color-swatch ${highlightColor === preset.id ? 'is-selected' : ''}`}
+                style={{ backgroundColor: preset.swatch }}
+                onClick={() => onChangeHighlightColor(preset.id)}
+                title={preset.label}
+                aria-label={`Highlight color ${preset.label}`}
+              />
+            ))}
+          </div>
+        </div>
         <div className="switch-row">
           <span className="switch-label">Show weekends</span>
           <Switch.Root

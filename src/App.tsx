@@ -3,9 +3,11 @@ import {
   Calendar,
   ChevronLeft,
   ChevronRight,
+  Moon,
   RefreshCw,
   Send,
   Sparkles,
+  Sun,
   Trash2,
 } from 'lucide-react';
 import type { AvailabilityBlock, CalendarEvent, CalendarSource } from './types';
@@ -26,7 +28,7 @@ import {
   requestGoogleAccessToken,
 } from './utils/googleCalendar';
 import { fetchIcsFromUrl, parseIcsToEvents } from './utils/icsParser';
-import { CalendarSidebar } from './components/CalendarSidebar';
+import { CalendarSidebar, type HighlightColorId } from './components/CalendarSidebar';
 import { WeekCalendarGrid } from './components/WeekCalendarGrid';
 import { ConnectCalendarDialog } from './components/ConnectCalendarDialog';
 import { AvailabilityOutputDialog } from './components/AvailabilityOutputDialog';
@@ -46,7 +48,35 @@ const STORAGE_KEYS = {
   lastSyncedAt: 'slotpicker_last_synced_v1',
   workHours: 'slotpicker_work_hours_v1',
   ignoredEvents: 'slotpicker_ignored_events_v1',
+  darkMode: 'slotpicker_dark_mode_v1',
+  highlightColor: 'slotpicker_highlight_color_v1',
 } as const;
+
+const HIGHLIGHT_THEME_VARS: Record<
+  HighlightColorId,
+  { light: Record<string, string>; dark: Record<string, string> }
+> = {
+  emerald: {
+    light: { '--avail-bg': 'rgba(16, 185, 129, 0.22)', '--avail-border': '#10b981', '--avail-text': '#065f46' },
+    dark: { '--avail-bg': 'rgba(16, 185, 129, 0.26)', '--avail-border': '#34d399', '--avail-text': '#6ee7b7' },
+  },
+  blue: {
+    light: { '--avail-bg': 'rgba(59, 130, 246, 0.20)', '--avail-border': '#3b82f6', '--avail-text': '#1e40af' },
+    dark: { '--avail-bg': 'rgba(59, 130, 246, 0.28)', '--avail-border': '#60a5fa', '--avail-text': '#bfdbfe' },
+  },
+  violet: {
+    light: { '--avail-bg': 'rgba(139, 92, 246, 0.20)', '--avail-border': '#8b5cf6', '--avail-text': '#5b21b6' },
+    dark: { '--avail-bg': 'rgba(139, 92, 246, 0.28)', '--avail-border': '#a78bfa', '--avail-text': '#ddd6fe' },
+  },
+  amber: {
+    light: { '--avail-bg': 'rgba(245, 158, 11, 0.22)', '--avail-border': '#f59e0b', '--avail-text': '#92400e' },
+    dark: { '--avail-bg': 'rgba(245, 158, 11, 0.26)', '--avail-border': '#fbbf24', '--avail-text': '#fde68a' },
+  },
+  rose: {
+    light: { '--avail-bg': 'rgba(244, 63, 94, 0.20)', '--avail-border': '#f43f5e', '--avail-text': '#9f1239' },
+    dark: { '--avail-bg': 'rgba(244, 63, 94, 0.26)', '--avail-border': '#fb7185', '--avail-text': '#fecdd3' },
+  },
+};
 
 function readJsonStorage<T>(key: string, fallback: T): T {
   try {
@@ -115,6 +145,15 @@ export function App() {
     readJsonStorage<string[]>(STORAGE_KEYS.ignoredEvents, [])
   );
   const ignoredEventIds = useMemo(() => new Set(ignoredEventList), [ignoredEventList]);
+  const [darkMode, setDarkMode] = useState<boolean>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.darkMode);
+    if (saved !== null) return saved === 'true';
+    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+  });
+  const [highlightColor, setHighlightColor] = useState<HighlightColorId>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.highlightColor) as HighlightColorId | null;
+    return saved && saved in HIGHLIGHT_THEME_VARS ? saved : 'emerald';
+  });
   const [workStartMin, setWorkStartMin] = useState<number>(() =>
     readJsonStorage<{ start: number; end: number }>(STORAGE_KEYS.workHours, {
       start: 9 * 60,
@@ -154,6 +193,15 @@ export function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.ignoredEvents, JSON.stringify(ignoredEventList));
   }, [ignoredEventList]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
+    localStorage.setItem(STORAGE_KEYS.darkMode, String(darkMode));
+  }, [darkMode]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.highlightColor, highlightColor);
+  }, [highlightColor]);
 
   useEffect(() => {
     localStorage.setItem(
@@ -401,6 +449,12 @@ export function App() {
     );
   };
 
+  const handleChangeCalendarColor = (id: string, color: string) => {
+    setCalendars((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, color } : c))
+    );
+  };
+
   const handleRemoveCalendar = (id: string) => {
     setCalendars((prev) => prev.filter((c) => c.id !== id));
     setRawIcsByCalId((prev) => {
@@ -541,8 +595,10 @@ export function App() {
     calendars.length > 0 && calendars.every((c) => c.provider === 'demo');
   const hasRealCalendars = calendars.some((c) => c.provider !== 'demo');
 
+  const highlightVars = HIGHLIGHT_THEME_VARS[highlightColor][darkMode ? 'dark' : 'light'];
+
   return (
-    <div className="app-shell">
+    <div className="app-shell" style={highlightVars as React.CSSProperties}>
       <header className="topbar">
         <div className="topbar-left">
           <div className="brand">
@@ -640,6 +696,16 @@ export function App() {
 
           <button
             type="button"
+            className="icon-btn"
+            onClick={() => setDarkMode((d) => !d)}
+            title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {darkMode ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
+
+          <button
+            type="button"
             className="btn btn-primary submit-btn"
             onClick={() => setOutputOpen(true)}
           >
@@ -669,6 +735,7 @@ export function App() {
         <CalendarSidebar
           calendars={calendars}
           onToggleCalendar={handleToggleCalendar}
+          onChangeCalendarColor={handleChangeCalendarColor}
           onRemoveCalendar={handleRemoveCalendar}
           onOpenConnect={() => setConnectOpen(true)}
           onRefresh={handleRefreshAll}
@@ -686,6 +753,10 @@ export function App() {
           onChangeWorkStart={setWorkStartMin}
           onChangeWorkEnd={setWorkEndMin}
           onFillFreeWeekdays={handleFillFreeWeekdays}
+          darkMode={darkMode}
+          onToggleDarkMode={setDarkMode}
+          highlightColor={highlightColor}
+          onChangeHighlightColor={setHighlightColor}
         />
 
         <main className="main-calendar-pane">
