@@ -1,7 +1,20 @@
 import { Checkbox } from '@base-ui/react/checkbox';
+import { Select } from '@base-ui/react/select';
 import { Switch } from '@base-ui/react/switch';
-import { Check, Plus, RefreshCw, Sparkles, Trash2, X } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  Plus,
+  RefreshCw,
+  Sparkles,
+  Trash2,
+  Wand2,
+  X,
+} from 'lucide-react';
 import type { AvailabilityBlock, CalendarSource } from '../types';
+import { formatMinutesLabel } from '../utils/temporal';
+
+const WORK_TIME_OPTIONS = Array.from({ length: 33 }, (_, i) => 6 * 60 + i * 30); // 6:00 AM .. 10:00 PM
 
 interface CalendarSidebarProps {
   calendars: CalendarSource[];
@@ -18,6 +31,11 @@ interface CalendarSidebarProps {
   startOnMonday: boolean;
   onToggleStartOnMonday: (val: boolean) => void;
   blocks: AvailabilityBlock[];
+  workStartMin: number;
+  workEndMin: number;
+  onChangeWorkStart: (min: number) => void;
+  onChangeWorkEnd: (min: number) => void;
+  onFillFreeWeekdays: () => void;
 }
 
 export function CalendarSidebar({
@@ -35,6 +53,11 @@ export function CalendarSidebar({
   startOnMonday,
   onToggleStartOnMonday,
   blocks,
+  workStartMin,
+  workEndMin,
+  onChangeWorkStart,
+  onChangeWorkEnd,
+  onFillFreeWeekdays,
 }: CalendarSidebarProps) {
   const totalMinutes = blocks.reduce(
     (acc, b) => acc + Math.round((b.endMs - b.startMs) / 60000),
@@ -43,7 +66,7 @@ export function CalendarSidebar({
   const totalHoursLabel =
     totalMinutes > 0
       ? `${(totalMinutes / 60).toFixed(totalMinutes % 60 === 0 ? 0 : 1)}h selected`
-      : 'Drag on grid to highlight';
+      : 'Drag or click + Free';
 
   return (
     <aside className="sidebar">
@@ -128,6 +151,95 @@ export function CalendarSidebar({
       <div className="sidebar-divider" />
 
       <div className="sidebar-section">
+        <h2 className="sidebar-heading">Working Hours</h2>
+        <div className="work-hours-row">
+          <Select.Root
+            value={String(workStartMin)}
+            onValueChange={(val) => {
+              if (!val) return;
+              const next = Number(val);
+              onChangeWorkStart(next);
+              if (next >= workEndMin) {
+                onChangeWorkEnd(Math.min(22 * 60, next + 60));
+              }
+            }}
+          >
+            <Select.Trigger className="base-select-trigger work-hour-select" aria-label="Working hours start">
+              <Select.Value>{formatMinutesLabel(workStartMin)}</Select.Value>
+              <Select.Icon className="base-select-icon">
+                <ChevronDown size={13} />
+              </Select.Icon>
+            </Select.Trigger>
+            <Select.Portal>
+              <Select.Positioner className="base-select-positioner" sideOffset={4}>
+                <Select.Popup className="base-select-popup work-hour-popup">
+                  <Select.List className="base-select-list">
+                    {WORK_TIME_OPTIONS.slice(0, -1).map((m) => (
+                      <Select.Item key={m} value={String(m)} className="base-select-item">
+                        <Select.ItemIndicator className="base-select-item-indicator">
+                          <Check size={12} />
+                        </Select.ItemIndicator>
+                        <Select.ItemText>{formatMinutesLabel(m)}</Select.ItemText>
+                      </Select.Item>
+                    ))}
+                  </Select.List>
+                </Select.Popup>
+              </Select.Positioner>
+            </Select.Portal>
+          </Select.Root>
+
+          <span className="work-hours-sep">to</span>
+
+          <Select.Root
+            value={String(workEndMin)}
+            onValueChange={(val) => {
+              if (!val) return;
+              const next = Number(val);
+              onChangeWorkEnd(next);
+              if (next <= workStartMin) {
+                onChangeWorkStart(Math.max(6 * 60, next - 60));
+              }
+            }}
+          >
+            <Select.Trigger className="base-select-trigger work-hour-select" aria-label="Working hours end">
+              <Select.Value>{formatMinutesLabel(workEndMin)}</Select.Value>
+              <Select.Icon className="base-select-icon">
+                <ChevronDown size={13} />
+              </Select.Icon>
+            </Select.Trigger>
+            <Select.Portal>
+              <Select.Positioner className="base-select-positioner" sideOffset={4}>
+                <Select.Popup className="base-select-popup work-hour-popup">
+                  <Select.List className="base-select-list">
+                    {WORK_TIME_OPTIONS.slice(1).map((m) => (
+                      <Select.Item key={m} value={String(m)} className="base-select-item">
+                        <Select.ItemIndicator className="base-select-item-indicator">
+                          <Check size={12} />
+                        </Select.ItemIndicator>
+                        <Select.ItemText>{formatMinutesLabel(m)}</Select.ItemText>
+                      </Select.Item>
+                    ))}
+                  </Select.List>
+                </Select.Popup>
+              </Select.Positioner>
+            </Select.Portal>
+          </Select.Root>
+        </div>
+
+        <button
+          type="button"
+          className="btn btn-secondary btn-full btn-sm"
+          onClick={onFillFreeWeekdays}
+          title="Select all meeting-free times within working hours for Mon–Fri this week"
+        >
+          <Wand2 size={14} />
+          Fill Free Time (Mon–Fri)
+        </button>
+      </div>
+
+      <div className="sidebar-divider" />
+
+      <div className="sidebar-section">
         <h2 className="sidebar-heading">View Options</h2>
         <div className="switch-row">
           <span className="switch-label">Show weekends</span>
@@ -175,8 +287,8 @@ export function CalendarSidebar({
           {totalHoursLabel}
         </p>
         <p className="sidebar-subhint">
-          Click and drag across any day column to highlight available times. Click × on a block to
-          remove it.
+          Click <strong>+ Free</strong> on any day header to auto-select open times within working
+          hours, or drag across the grid.
         </p>
       </div>
     </aside>

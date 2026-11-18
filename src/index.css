@@ -299,6 +299,31 @@ body,
   margin-block-start: 4px;
 }
 
+.work-hours-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.work-hour-select {
+  flex: 1 1 0;
+  min-inline-size: 0;
+  justify-content: space-between;
+  padding: 5px 8px;
+  font-size: 0.78rem;
+}
+
+.work-hours-sep {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.work-hour-popup {
+  min-inline-size: 130px;
+  max-block-size: 240px;
+}
+
 .switch-row {
   display: flex;
   align-items: center;
@@ -421,6 +446,36 @@ body,
 .day-header-cell.is-today .day-number {
   background: var(--accent);
   color: #fff;
+}
+
+.day-fill-free-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-block-start: 3px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-app);
+  color: var(--text-secondary);
+  font-size: 0.69rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.day-fill-free-btn:hover {
+  background: var(--avail-bg);
+  border-color: var(--avail-border);
+  color: var(--avail-text);
+}
+
+.non-working-band {
+  position: absolute;
+  inset-inline: 0;
+  background: rgba(148, 163, 184, 0.09);
+  pointer-events: none;
+  z-index: 1;
 }
 
 .all-day-row {

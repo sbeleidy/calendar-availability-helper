@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import type { AvailabilityBlock, CalendarEvent, CalendarSource } from './types';
 import {
+  computeFreeIntervalsForDay,
   getCurrentWeekStart,
   getLocalTimeZone,
   getTimeZoneOptions,
@@ -39,6 +40,7 @@ const STORAGE_KEYS = {
   token: 'slotpicker_gcal_token_v1',
   tokenExpiresAt: 'slotpicker_gcal_token_exp_v1',
   lastSyncedAt: 'slotpicker_last_synced_v1',
+  workHours: 'slotpicker_work_hours_v1',
 } as const;
 
 function readJsonStorage<T>(key: string, fallback: T): T {
@@ -104,6 +106,18 @@ export function App() {
   const [availabilityBlocks, setAvailabilityBlocks] = useState<AvailabilityBlock[]>(() =>
     readJsonStorage<AvailabilityBlock[]>(STORAGE_KEYS.availability, [])
   );
+  const [workStartMin, setWorkStartMin] = useState<number>(() =>
+    readJsonStorage<{ start: number; end: number }>(STORAGE_KEYS.workHours, {
+      start: 9 * 60,
+      end: 17 * 60,
+    }).start
+  );
+  const [workEndMin, setWorkEndMin] = useState<number>(() =>
+    readJsonStorage<{ start: number; end: number }>(STORAGE_KEYS.workHours, {
+      start: 9 * 60,
+      end: 17 * 60,
+    }).end
+  );
   const [connectOpen, setConnectOpen] = useState(false);
   const [outputOpen, setOutputOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -127,6 +141,13 @@ export function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.availability, JSON.stringify(availabilityBlocks));
   }, [availabilityBlocks]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      STORAGE_KEYS.workHours,
+      JSON.stringify({ start: workStartMin, end: workEndMin })
+    );
+  }, [workStartMin, workEndMin]);
 
   // Periodically update "Synced Xm ago" label
   useEffect(() => {
@@ -396,6 +417,46 @@ export function App() {
     setAvailabilityBlocks((prev) => prev.filter((b) => b.id !== id));
   };
 
+  const handleFillFreeDays = (dateStrs: string[]) => {
+    const enabledCalIds = new Set(
+      calendars.filter((c) => c.enabled).map((c) => c.id)
+    );
+    const enabledEvents = allEvents.filter((ev) => enabledCalIds.has(ev.calendarId));
+
+    const newBlocks: AvailabilityBlock[] = [];
+    for (const dateStr of dateStrs) {
+      const intervals = computeFreeIntervalsForDay(
+        dateStr,
+        workStartMin,
+        workEndMin,
+        displayTimeZone,
+        enabledEvents
+      );
+      for (const iv of intervals) {
+        newBlocks.push({
+          id: crypto.randomUUID(),
+          startMs: iv.startMs,
+          endMs: iv.endMs,
+        });
+      }
+    }
+
+    if (newBlocks.length === 0) {
+      setStatusMessage('No free slots found within working hours for the selected day(s).');
+      return;
+    }
+
+    setAvailabilityBlocks((prev) => mergeAvailabilityBlocks([...prev, ...newBlocks]));
+  };
+
+  const handleFillFreeWeekdays = () => {
+    const weekdays = getWeekDates(weekStartDateStr).filter((d) => {
+      const dow = Temporal.PlainDate.from(d).dayOfWeek;
+      return dow >= 1 && dow <= 5;
+    });
+    handleFillFreeDays(weekdays);
+  };
+
   const shiftWeek = (deltaDays: number) => {
     const next = Temporal.PlainDate.from(weekStartDateStr).add({ days: deltaDays });
     setWeekStartDateStr(next.toString());
@@ -563,6 +624,11 @@ export function App() {
           startOnMonday={startOnMonday}
           onToggleStartOnMonday={handleToggleStartOnMonday}
           blocks={availabilityBlocks}
+          workStartMin={workStartMin}
+          workEndMin={workEndMin}
+          onChangeWorkStart={setWorkStartMin}
+          onChangeWorkEnd={setWorkEndMin}
+          onFillFreeWeekdays={handleFillFreeWeekdays}
         />
 
         <main className="main-calendar-pane">
@@ -573,8 +639,11 @@ export function App() {
             calendars={calendars}
             events={allEvents}
             availabilityBlocks={availabilityBlocks}
+            workStartMin={workStartMin}
+            workEndMin={workEndMin}
             onAddAvailability={handleAddAvailability}
             onRemoveAvailability={handleRemoveAvailability}
+            onFillFreeDay={(dateStr) => handleFillFreeDays([dateStr])}
           />
         </main>
       </div>

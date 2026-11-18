@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { AlertTriangle, X } from 'lucide-react';
+import { AlertTriangle, Wand2, X } from 'lucide-react';
 import type { AvailabilityBlock, CalendarEvent, CalendarSource } from '../types';
 import {
   formatMinutesLabel,
@@ -21,8 +21,11 @@ interface WeekCalendarGridProps {
   calendars: CalendarSource[];
   events: CalendarEvent[];
   availabilityBlocks: AvailabilityBlock[];
+  workStartMin: number;
+  workEndMin: number;
   onAddAvailability: (startMs: number, endMs: number) => void;
   onRemoveAvailability: (id: string) => void;
+  onFillFreeDay: (dateStr: string) => void;
 }
 
 interface PositionedEvent {
@@ -102,8 +105,11 @@ export function WeekCalendarGrid({
   calendars,
   events,
   availabilityBlocks,
+  workStartMin,
+  workEndMin,
   onAddAvailability,
   onRemoveAvailability,
+  onFillFreeDay,
 }: WeekCalendarGridProps) {
   const [drag, setDrag] = useState<DragState | null>(null);
   const gridBodyRef = useRef<HTMLDivElement | null>(null);
@@ -331,6 +337,15 @@ export function WeekCalendarGrid({
             <div key={dayStr} className={`day-header-cell ${isToday ? 'is-today' : ''}`}>
               <span className="day-weekday">{weekday}</span>
               <span className="day-number">{pd.day}</span>
+              <button
+                type="button"
+                className="day-fill-free-btn"
+                onClick={() => onFillFreeDay(dayStr)}
+                title={`Select all meeting-free times on ${weekday} ${pd.day} within working hours`}
+              >
+                <Wand2 size={11} />
+                Free
+              </button>
             </div>
           );
         })}
@@ -413,6 +428,26 @@ export function WeekCalendarGrid({
                     style={{ height: `${HOUR_HEIGHT}px` }}
                   />
                 ))}
+
+                {/* Non-working hours shading */}
+                {workStartMin > GRID_START_HOUR * 60 && (
+                  <div
+                    className="non-working-band"
+                    style={{
+                      top: 0,
+                      height: `${((workStartMin - GRID_START_HOUR * 60) / 60) * HOUR_HEIGHT}px`,
+                    }}
+                  />
+                )}
+                {workEndMin < GRID_END_HOUR * 60 && (
+                  <div
+                    className="non-working-band"
+                    style={{
+                      top: `${((workEndMin - GRID_START_HOUR * 60) / 60) * HOUR_HEIGHT}px`,
+                      height: `${((GRID_END_HOUR * 60 - workEndMin) / 60) * HOUR_HEIGHT}px`,
+                    }}
+                  />
+                )}
 
                 {/* Current Time Line */}
                 {isToday &&

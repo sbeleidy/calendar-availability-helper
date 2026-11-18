@@ -1,5 +1,5 @@
 import type { Temporal as TemporalType } from 'temporal-polyfill';
-import type { AvailabilityBlock, BulletFormat } from '../types';
+import type { AvailabilityBlock, BulletFormat, CalendarEvent } from '../types';
 
 /**
  * Ensure globalThis.Temporal is available, dynamically loading temporal-polyfill
@@ -278,4 +278,58 @@ export function formatMinutesLabel(minutes: number): string {
   const hour12 = h % 12 === 0 ? 12 : h % 12;
   if (m === 0) return `${hour12} ${period}`;
   return `${hour12}:${String(m).padStart(2, '0')} ${period}`;
+}
+
+/**
+ * Compute meeting-free intervals within [workStartMin, workEndMin] for a given date.
+ */
+export function computeFreeIntervalsForDay(
+  dateStr: string,
+  workStartMin: number,
+  workEndMin: number,
+  timeZone: string,
+  busyEvents: CalendarEvent[],
+  minSlotMinutes = 15
+): Array<{ startMs: number; endMs: number }> {
+  if (workEndMin <= workStartMin) return [];
+
+  const windowStartMs = zonedDateMinutesToMs(dateStr, workStartMin, timeZone);
+  const windowEndMs = zonedDateMinutesToMs(dateStr, workEndMin, timeZone);
+
+  const clampedBusy = busyEvents
+    .filter((ev) => !ev.allDay && ev.endMs > windowStartMs && ev.startMs < windowEndMs)
+    .map((ev) => ({
+      startMs: Math.max(windowStartMs, ev.startMs),
+      endMs: Math.min(windowEndMs, ev.endMs),
+    }))
+    .sort((a, b) => a.startMs - b.startMs);
+
+  const mergedBusy: Array<{ startMs: number; endMs: number }> = [];
+  for (const b of clampedBusy) {
+    if (mergedBusy.length === 0 || b.startMs > mergedBusy[mergedBusy.length - 1].endMs) {
+      mergedBusy.push({ ...b });
+    } else {
+      mergedBusy[mergedBusy.length - 1].endMs = Math.max(
+        mergedBusy[mergedBusy.length - 1].endMs,
+        b.endMs
+      );
+    }
+  }
+
+  const free: Array<{ startMs: number; endMs: number }> = [];
+  const minMs = minSlotMinutes * 60_000;
+  let cursor = windowStartMs;
+
+  for (const b of mergedBusy) {
+    if (b.startMs - cursor >= minMs) {
+      free.push({ startMs: cursor, endMs: b.startMs });
+    }
+    cursor = Math.max(cursor, b.endMs);
+  }
+
+  if (windowEndMs - cursor >= minMs) {
+    free.push({ startMs: cursor, endMs: windowEndMs });
+  }
+
+  return free;
 }
