@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Wand2, X } from 'lucide-react';
+import { AlertTriangle, Eye, EyeOff, MapPin, Trash2, Wand2, X } from 'lucide-react';
 import type { AvailabilityBlock, CalendarEvent, CalendarSource } from '../types';
 import {
   formatMinutesLabel,
@@ -21,11 +21,14 @@ interface WeekCalendarGridProps {
   calendars: CalendarSource[];
   events: CalendarEvent[];
   availabilityBlocks: AvailabilityBlock[];
+  ignoredEventIds: Set<string>;
   workStartMin: number;
   workEndMin: number;
   onAddAvailability: (startMs: number, endMs: number) => void;
   onRemoveAvailability: (id: string) => void;
   onFillFreeDay: (dateStr: string) => void;
+  onClearDay: (dateStr: string) => void;
+  onToggleIgnoreEvent: (eventId: string) => void;
 }
 
 interface PositionedEvent {
@@ -105,11 +108,14 @@ export function WeekCalendarGrid({
   calendars,
   events,
   availabilityBlocks,
+  ignoredEventIds,
   workStartMin,
   workEndMin,
   onAddAvailability,
   onRemoveAvailability,
   onFillFreeDay,
+  onClearDay,
+  onToggleIgnoreEvent,
 }: WeekCalendarGridProps) {
   const [drag, setDrag] = useState<DragState | null>(null);
   const gridBodyRef = useRef<HTMLDivElement | null>(null);
@@ -238,7 +244,10 @@ export function WeekCalendarGrid({
         if (clampedEnd <= clampedStart) continue;
 
         const hasConflict = dayEvents.some(
-          (pe) => pe.event.startMs < block.endMs && pe.event.endMs > block.startMs
+          (pe) =>
+            !ignoredEventIds.has(pe.event.id) &&
+            pe.event.startMs < block.endMs &&
+            pe.event.endMs > block.startMs
         );
 
         list.push({
@@ -268,7 +277,7 @@ export function WeekCalendarGrid({
     dateStr: string
   ) => {
     if (e.button !== 0) return;
-    if ((e.target as HTMLElement).closest('[data-avail-remove]')) return;
+    if ((e.target as HTMLElement).closest('[data-avail-remove], [data-event-ignore]')) return;
 
     e.currentTarget.setPointerCapture(e.pointerId);
     const min = yToMinutes(e.clientY, e.currentTarget);
@@ -333,19 +342,34 @@ export function WeekCalendarGrid({
           const weekday = zdt.toLocaleString('en-US', { weekday: 'short' });
           const isToday = dayStr === todayStr;
 
+          const hasDayAvailability = (availabilityByDay.get(dayStr)?.length ?? 0) > 0;
+
           return (
             <div key={dayStr} className={`day-header-cell ${isToday ? 'is-today' : ''}`}>
               <span className="day-weekday">{weekday}</span>
               <span className="day-number">{pd.day}</span>
-              <button
-                type="button"
-                className="day-fill-free-btn"
-                onClick={() => onFillFreeDay(dayStr)}
-                title={`Select all meeting-free times on ${weekday} ${pd.day} within working hours`}
-              >
-                <Wand2 size={11} />
-                Free
-              </button>
+              <div className="day-header-actions">
+                <button
+                  type="button"
+                  className="day-fill-free-btn"
+                  onClick={() => onFillFreeDay(dayStr)}
+                  title={`Select all meeting-free times on ${weekday} ${pd.day} within working hours`}
+                >
+                  <Wand2 size={11} />
+                  Free
+                </button>
+                {hasDayAvailability && (
+                  <button
+                    type="button"
+                    className="day-clear-btn"
+                    onClick={() => onClearDay(dayStr)}
+                    title={`Clear highlighted times on ${weekday} ${pd.day}`}
+                  >
+                    <Trash2 size={11} />
+                    Clear
+                  </button>
+                )}
+              </div>
             </div>
           );
         })}
@@ -399,7 +423,7 @@ export function WeekCalendarGrid({
           </div>
 
           {/* Day Columns */}
-          {visibleDays.map((dayStr) => {
+          {visibleDays.map((dayStr, dayIdx) => {
             const dayEvents = eventsByDay.timed.get(dayStr) ?? [];
             const dayAvail = availabilityByDay.get(dayStr) ?? [];
             const isToday = dayStr === todayStr;
@@ -473,11 +497,14 @@ export function WeekCalendarGrid({
                   );
                   const widthPct = 100 / pe.totalCols;
                   const leftPct = pe.col * widthPct;
+                  const isIgnored = ignoredEventIds.has(pe.event.id);
+                  const calName = calendarMap.get(pe.event.calendarId)?.name ?? 'Calendar';
+                  const alignRight = dayIdx >= visibleDays.length - 2;
 
                   return (
                     <div
                       key={pe.event.id}
-                      className="busy-event-card"
+                      className={`busy-event-card ${isIgnored ? 'is-ignored' : ''}`}
                       style={{
                         top: `${top}px`,
                         height: `${height}px`,
@@ -485,14 +512,65 @@ export function WeekCalendarGrid({
                         width: `calc(${widthPct}% - 4px)`,
                         '--ev-color': pe.color,
                       } as React.CSSProperties}
-                      title={`${pe.event.title} (${formatMinutesLabel(pe.startMin)} – ${formatMinutesLabel(pe.endMin)})`}
                     >
-                      <div className="busy-event-title">{pe.event.title}</div>
-                      {height >= 34 && (
-                        <div className="busy-event-time">
+                      <div className="busy-event-inner">
+                        <div className="busy-event-title">{pe.event.title}</div>
+                        {height >= 34 && (
+                          <div className="busy-event-time">
+                            {formatMinutesLabel(pe.startMin)} – {formatMinutesLabel(pe.endMin)}
+                          </div>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        data-event-ignore
+                        className="event-ignore-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleIgnoreEvent(pe.event.id);
+                        }}
+                        title={
+                          isIgnored
+                            ? 'Include this event when selecting free times'
+                            : 'Ignore this event when selecting free times'
+                        }
+                        aria-label={
+                          isIgnored
+                            ? `Include ${pe.event.title}`
+                            : `Ignore ${pe.event.title}`
+                        }
+                      >
+                        {isIgnored ? <Eye size={12} /> : <EyeOff size={12} />}
+                      </button>
+
+                      <div
+                        className={`event-hover-card ${alignRight ? 'align-right' : ''}`}
+                        role="tooltip"
+                      >
+                        <div className="event-hover-title">{pe.event.title}</div>
+                        <div className="event-hover-time">
                           {formatMinutesLabel(pe.startMin)} – {formatMinutesLabel(pe.endMin)}
                         </div>
-                      )}
+                        <div className="event-hover-cal">
+                          <span
+                            className="event-hover-dot"
+                            style={{ backgroundColor: pe.color }}
+                          />
+                          <span>{calName}</span>
+                        </div>
+                        {pe.event.location && (
+                          <div className="event-hover-location">
+                            <MapPin size={11} />
+                            <span>{pe.event.location}</span>
+                          </div>
+                        )}
+                        <div className="event-hover-status">
+                          {isIgnored
+                            ? 'Ignored — treated as free time'
+                            : 'Click eye icon to ignore when selecting'}
+                        </div>
+                      </div>
                     </div>
                   );
                 })}

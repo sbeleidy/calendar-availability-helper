@@ -105,6 +105,7 @@ interface GoogleCalendarListItem {
 interface GoogleEventItem {
   id: string;
   summary?: string;
+  location?: string;
   status?: string;
   start?: {
     dateTime?: string;
@@ -197,6 +198,7 @@ export async function fetchGoogleEventsForCalendars(
             startMs: new Date(ev.start.dateTime).getTime(),
             endMs: new Date(ev.end.dateTime).getTime(),
             allDay: false,
+            location: ev.location,
           });
         } else if (ev.start?.date && ev.end?.date) {
           events.push({
@@ -206,6 +208,7 @@ export async function fetchGoogleEventsForCalendars(
             startMs: new Date(`${ev.start.date}T00:00:00`).getTime(),
             endMs: new Date(`${ev.end.date}T00:00:00`).getTime(),
             allDay: true,
+            location: ev.location,
           });
         }
       }

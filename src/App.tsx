@@ -6,6 +6,7 @@ import {
   RefreshCw,
   Send,
   Sparkles,
+  Trash2,
 } from 'lucide-react';
 import type { AvailabilityBlock, CalendarEvent, CalendarSource } from './types';
 import {
@@ -44,6 +45,7 @@ const STORAGE_KEYS = {
   tokenExpiresAt: 'slotpicker_gcal_token_exp_v1',
   lastSyncedAt: 'slotpicker_last_synced_v1',
   workHours: 'slotpicker_work_hours_v1',
+  ignoredEvents: 'slotpicker_ignored_events_v1',
 } as const;
 
 function readJsonStorage<T>(key: string, fallback: T): T {
@@ -109,6 +111,10 @@ export function App() {
   const [availabilityBlocks, setAvailabilityBlocks] = useState<AvailabilityBlock[]>(() =>
     readJsonStorage<AvailabilityBlock[]>(STORAGE_KEYS.availability, [])
   );
+  const [ignoredEventList, setIgnoredEventList] = useState<string[]>(() =>
+    readJsonStorage<string[]>(STORAGE_KEYS.ignoredEvents, [])
+  );
+  const ignoredEventIds = useMemo(() => new Set(ignoredEventList), [ignoredEventList]);
   const [workStartMin, setWorkStartMin] = useState<number>(() =>
     readJsonStorage<{ start: number; end: number }>(STORAGE_KEYS.workHours, {
       start: 9 * 60,
@@ -144,6 +150,10 @@ export function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.availability, JSON.stringify(availabilityBlocks));
   }, [availabilityBlocks]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.ignoredEvents, JSON.stringify(ignoredEventList));
+  }, [ignoredEventList]);
 
   useEffect(() => {
     localStorage.setItem(
@@ -420,11 +430,43 @@ export function App() {
     setAvailabilityBlocks((prev) => prev.filter((b) => b.id !== id));
   };
 
+  const handleToggleIgnoreEvent = (eventId: string) => {
+    setIgnoredEventList((prev) =>
+      prev.includes(eventId)
+        ? prev.filter((id) => id !== eventId)
+        : [...prev, eventId]
+    );
+  };
+
+  const handleClearDay = (dateStr: string) => {
+    const dayStartMs = zonedDateMinutesToMs(dateStr, 0, displayTimeZone);
+    const dayEndMs = zonedDateMinutesToMs(dateStr, 24 * 60, displayTimeZone);
+
+    setAvailabilityBlocks((prev) => {
+      const next: AvailabilityBlock[] = [];
+      for (const b of prev) {
+        if (b.endMs <= dayStartMs || b.startMs >= dayEndMs) {
+          next.push(b);
+          continue;
+        }
+        if (b.startMs < dayStartMs) {
+          next.push({ id: crypto.randomUUID(), startMs: b.startMs, endMs: dayStartMs });
+        }
+        if (b.endMs > dayEndMs) {
+          next.push({ id: crypto.randomUUID(), startMs: dayEndMs, endMs: b.endMs });
+        }
+      }
+      return next;
+    });
+  };
+
   const handleFillFreeDays = (dateStrs: string[]) => {
     const enabledCalIds = new Set(
       calendars.filter((c) => c.enabled).map((c) => c.id)
     );
-    const enabledEvents = allEvents.filter((ev) => enabledCalIds.has(ev.calendarId));
+    const enabledEvents = allEvents.filter(
+      (ev) => enabledCalIds.has(ev.calendarId) && !ignoredEventIds.has(ev.id)
+    );
 
     const newBlocks: AvailabilityBlock[] = [];
     for (const dateStr of dateStrs) {
@@ -584,6 +626,18 @@ export function App() {
             />
           </div>
 
+          {availabilityBlocks.length > 0 && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => setAvailabilityBlocks([])}
+              title="Clear all highlighted availability blocks"
+            >
+              <Trash2 size={13} />
+              Clear All
+            </button>
+          )}
+
           <button
             type="button"
             className="btn btn-primary submit-btn"
@@ -642,11 +696,14 @@ export function App() {
             calendars={calendars}
             events={allEvents}
             availabilityBlocks={availabilityBlocks}
+            ignoredEventIds={ignoredEventIds}
             workStartMin={workStartMin}
             workEndMin={workEndMin}
             onAddAvailability={handleAddAvailability}
             onRemoveAvailability={handleRemoveAvailability}
             onFillFreeDay={(dateStr) => handleFillFreeDays([dateStr])}
+            onClearDay={handleClearDay}
+            onToggleIgnoreEvent={handleToggleIgnoreEvent}
           />
         </main>
       </div>

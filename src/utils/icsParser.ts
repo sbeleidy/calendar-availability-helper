@@ -46,6 +46,7 @@ export function parseIcsToEvents(
               startMs,
               endMs,
               allDay: details.startDate.isDate,
+              location: event.location || undefined,
             });
           }
         }
@@ -61,6 +62,7 @@ export function parseIcsToEvents(
             startMs,
             endMs,
             allDay: event.startDate.isDate,
+            location: event.location || undefined,
           });
         }
       }
