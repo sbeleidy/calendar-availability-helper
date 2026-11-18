@@ -31,6 +31,9 @@ import { ConnectCalendarDialog } from './components/ConnectCalendarDialog';
 import { AvailabilityOutputDialog } from './components/AvailabilityOutputDialog';
 import { TimeZoneSelect } from './components/TimeZoneSelect';
 
+const DEFAULT_GOOGLE_CLIENT_ID =
+  (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined)?.trim() ?? '';
+
 const STORAGE_KEYS = {
   clientId: 'slotpicker_gcal_client_id',
   calendars: 'slotpicker_calendars_v1',
@@ -96,7 +99,7 @@ export function App() {
     return raw ? Number(raw) : 0;
   });
   const [savedClientId, setSavedClientId] = useState<string>(
-    () => localStorage.getItem(STORAGE_KEYS.clientId) ?? ''
+    () => localStorage.getItem(STORAGE_KEYS.clientId) || DEFAULT_GOOGLE_CLIENT_ID
   );
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(() => {
     const raw = localStorage.getItem(STORAGE_KEYS.lastSyncedAt);

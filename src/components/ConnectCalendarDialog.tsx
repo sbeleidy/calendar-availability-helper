@@ -30,6 +30,7 @@ export function ConnectCalendarDialog({
   onAddIcalFile,
 }: ConnectCalendarDialogProps) {
   const [clientId, setClientId] = useState(savedClientId);
+  const [showCustomClientId, setShowCustomClientId] = useState(!savedClientId);
   const [icalUrl, setIcalUrl] = useState('');
   const [icalName, setIcalName] = useState('');
   const [color, setColor] = useState(PRESET_COLORS[0]);
@@ -192,22 +193,35 @@ export function ConnectCalendarDialog({
             <Tabs.Panel value="oauth" className="base-tab-panel">
               <p className="panel-help">
                 Connects <strong>all</strong> your Google Calendars at once via read-only OAuth
-                and stores your calendar list &amp; events locally in your browser. Create a Web
-                OAuth Client ID in Google Cloud Console with{' '}
-                <code>{window.location.origin}</code> in Authorized JavaScript origins.
+                and stores your calendar list &amp; events locally in your browser.
               </p>
 
               <form onSubmit={handleOAuthSubmit} className="form-stack">
-                <label className="field-label">
-                  <span>Google OAuth 2.0 Client ID</span>
-                  <input
-                    type="text"
-                    className="text-input"
-                    placeholder="1234567890-abc...apps.googleusercontent.com"
-                    value={clientId}
-                    onChange={(e) => setClientId(e.target.value)}
-                  />
-                </label>
+                {showCustomClientId ? (
+                  <label className="field-label">
+                    <span>Google OAuth 2.0 Client ID</span>
+                    <input
+                      type="text"
+                      className="text-input"
+                      placeholder="1234567890-abc...apps.googleusercontent.com"
+                      value={clientId}
+                      onChange={(e) => setClientId(e.target.value)}
+                    />
+                  </label>
+                ) : (
+                  <div className="dialog-footer-between">
+                    <span className="sidebar-subhint">
+                      Using configured Google OAuth app.
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setShowCustomClientId(true)}
+                    >
+                      Use custom Client ID
+                    </button>
+                  </div>
+                )}
 
                 {error && <p className="form-error">{error}</p>}
 
