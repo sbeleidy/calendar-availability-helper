@@ -9,8 +9,15 @@ import {
   Sparkles,
   Sun,
   Trash2,
+  Users,
 } from 'lucide-react';
-import type { AvailabilityBlock, CalendarEvent, CalendarSource } from './types';
+import type {
+  AvailabilityBlock,
+  CalendarEvent,
+  CalendarSource,
+  CalendarViewMode,
+  ParticipantAvailability,
+} from './types';
 import {
   computeFreeIntervalsForDay,
   getCurrentWeekStart,
@@ -18,6 +25,7 @@ import {
   getTimeZoneOptions,
   getWeekDates,
   mergeAvailabilityBlocks,
+  msToZonedDateAndMinutes,
   zonedDateMinutesToMs,
 } from './utils/temporal';
 import { DEMO_CALENDARS, buildDemoEventsForWeek } from './utils/demoData';
@@ -30,8 +38,10 @@ import {
 import { fetchIcsFromUrl, parseIcsToEvents } from './utils/icsParser';
 import { CalendarSidebar, type HighlightColorId } from './components/CalendarSidebar';
 import { WeekCalendarGrid } from './components/WeekCalendarGrid';
+import { HeatmapCalendarGrid } from './components/HeatmapCalendarGrid';
 import { ConnectCalendarDialog } from './components/ConnectCalendarDialog';
 import { AvailabilityOutputDialog } from './components/AvailabilityOutputDialog';
+import { AddParticipantDialog } from './components/AddParticipantDialog';
 import { TimeZoneSelect } from './components/TimeZoneSelect';
 
 const DEFAULT_GOOGLE_CLIENT_ID =
@@ -50,6 +60,8 @@ const STORAGE_KEYS = {
   ignoredEvents: 'slotpicker_ignored_events_v1',
   darkMode: 'slotpicker_dark_mode_v1',
   highlightColor: 'slotpicker_highlight_color_v1',
+  participants: 'slotpicker_participants_v1',
+  includeMe: 'slotpicker_include_me_v1',
 } as const;
 
 const HIGHLIGHT_THEME_VARS: Record<
@@ -168,6 +180,19 @@ export function App() {
   );
   const [connectOpen, setConnectOpen] = useState(false);
   const [outputOpen, setOutputOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<CalendarViewMode>('edit');
+  const [participants, setParticipants] = useState<ParticipantAvailability[]>(() =>
+    readJsonStorage<ParticipantAvailability[]>(STORAGE_KEYS.participants, [])
+  );
+  const [includeMeInHeatmap, setIncludeMeInHeatmap] = useState<boolean>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.includeMe);
+    return saved !== null ? saved === 'true' : true;
+  });
+  const [minOverlap, setMinOverlap] = useState<number>(2);
+  const [participantDialogOpen, setParticipantDialogOpen] = useState(false);
+  const [editingParticipant, setEditingParticipant] = useState<ParticipantAvailability | null>(
+    null
+  );
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [needsReauth, setNeedsReauth] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -209,6 +234,14 @@ export function App() {
       JSON.stringify({ start: workStartMin, end: workEndMin })
     );
   }, [workStartMin, workEndMin]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.participants, JSON.stringify(participants));
+  }, [participants]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.includeMe, String(includeMeInHeatmap));
+  }, [includeMeInHeatmap]);
 
   // Periodically update "Synced Xm ago" label
   useEffect(() => {
@@ -572,6 +605,87 @@ export function App() {
     setWeekStartDateStr(shifted.toString());
   };
 
+  const handleOpenAddParticipant = () => {
+    setEditingParticipant(null);
+    setParticipantDialogOpen(true);
+  };
+
+  const handleEditParticipant = (participant: ParticipantAvailability) => {
+    setEditingParticipant(participant);
+    setParticipantDialogOpen(true);
+  };
+
+  const handleSaveParticipant = (data: {
+    id?: string;
+    name: string;
+    color: string;
+    rawText: string;
+    defaultTimeZone: string;
+    referenceWeekStart: string;
+    blocks: AvailabilityBlock[];
+  }) => {
+    if (data.id) {
+      setParticipants((prev) =>
+        prev.map((p) =>
+          p.id === data.id
+            ? {
+                ...p,
+                name: data.name,
+                color: data.color,
+                rawText: data.rawText,
+                defaultTimeZone: data.defaultTimeZone,
+                referenceWeekStart: data.referenceWeekStart,
+                blocks: data.blocks,
+                updatedAt: Date.now(),
+              }
+            : p
+        )
+      );
+      setStatusMessage(`Updated ${data.name}'s availability (${data.blocks.length} blocks).`);
+    } else {
+      const nextParticipant: ParticipantAvailability = {
+        id: `person:${crypto.randomUUID()}`,
+        name: data.name,
+        color: data.color,
+        enabled: true,
+        rawText: data.rawText,
+        defaultTimeZone: data.defaultTimeZone,
+        referenceWeekStart: data.referenceWeekStart,
+        blocks: data.blocks,
+        updatedAt: Date.now(),
+      };
+      const nextEnabledCount =
+        (includeMeInHeatmap ? 1 : 0) +
+        participants.filter((p) => p.enabled).length +
+        1;
+      setParticipants((prev) => [...prev, nextParticipant]);
+      setMinOverlap(nextEnabledCount);
+      setViewMode('heatmap');
+      setStatusMessage(
+        `Added ${data.name}'s availability (${data.blocks.length} blocks) — switched to Group Heatmap.`
+      );
+    }
+  };
+
+  const handleToggleParticipant = (id: string) => {
+    setParticipants((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, enabled: !p.enabled } : p))
+    );
+  };
+
+  const handleRemoveParticipant = (id: string) => {
+    setParticipants((prev) => prev.filter((p) => p.id !== id));
+  };
+
+  const handleJumpToParticipantWeek = (participant: ParticipantAvailability) => {
+    if (participant.blocks.length === 0) return;
+    const earliestMs = Math.min(...participant.blocks.map((b) => b.startMs));
+    const { dateStr } = msToZonedDateAndMinutes(earliestMs, displayTimeZone);
+    const pd = Temporal.PlainDate.from(dateStr);
+    const offset = startOnMonday ? pd.dayOfWeek - 1 : pd.dayOfWeek % 7;
+    setWeekStartDateStr(pd.subtract({ days: offset }).toString());
+  };
+
   const weekRangeLabel = useMemo(() => {
     const days = getWeekDates(weekStartDateStr);
     const startZ = Temporal.PlainDate.from(days[0]).toZonedDateTime({
@@ -595,6 +709,9 @@ export function App() {
     calendars.length > 0 && calendars.every((c) => c.provider === 'demo');
   const hasRealCalendars = calendars.some((c) => c.provider !== 'demo');
 
+  const enabledGroupCount =
+    (includeMeInHeatmap ? 1 : 0) + participants.filter((p) => p.enabled).length;
+
   const highlightVars = HIGHLIGHT_THEME_VARS[highlightColor][darkMode ? 'dark' : 'light'];
 
   return (
@@ -606,6 +723,32 @@ export function App() {
               <Calendar size={18} />
             </span>
             <span className="brand-title">SlotPicker</span>
+          </div>
+
+          <div className="mode-switcher" role="tablist" aria-label="Calendar view mode">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={viewMode === 'edit'}
+              className={`mode-switch-btn ${viewMode === 'edit' ? 'is-active' : ''}`}
+              onClick={() => setViewMode('edit')}
+            >
+              <Calendar size={13} />
+              My Calendar
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={viewMode === 'heatmap'}
+              className={`mode-switch-btn ${viewMode === 'heatmap' ? 'is-active' : ''}`}
+              onClick={() => setViewMode('heatmap')}
+            >
+              <Users size={13} />
+              Group Heatmap
+              {participants.length > 0 && (
+                <span className="mode-switch-badge">{enabledGroupCount}</span>
+              )}
+            </button>
           </div>
 
           <div className="week-nav">
@@ -639,7 +782,7 @@ export function App() {
         </div>
 
         <div className="topbar-right">
-          {isDemoOnly && (
+          {isDemoOnly && viewMode === 'edit' && (
             <button
               type="button"
               className="demo-pill"
@@ -682,7 +825,7 @@ export function App() {
             />
           </div>
 
-          {availabilityBlocks.length > 0 && (
+          {viewMode === 'edit' && availabilityBlocks.length > 0 && (
             <button
               type="button"
               className="btn btn-secondary btn-sm"
@@ -711,7 +854,7 @@ export function App() {
           >
             <Send size={14} />
             Submit
-            {availabilityBlocks.length > 0 && (
+            {availabilityBlocks.length > 0 && viewMode === 'edit' && (
               <span className="submit-badge">{availabilityBlocks.length}</span>
             )}
           </button>
@@ -757,25 +900,54 @@ export function App() {
           onToggleDarkMode={setDarkMode}
           highlightColor={highlightColor}
           onChangeHighlightColor={setHighlightColor}
+          participants={participants}
+          includeMeInHeatmap={includeMeInHeatmap}
+          onToggleIncludeMe={setIncludeMeInHeatmap}
+          onOpenAddParticipant={handleOpenAddParticipant}
+          onEditParticipant={handleEditParticipant}
+          onToggleParticipant={handleToggleParticipant}
+          onRemoveParticipant={handleRemoveParticipant}
+          onJumpToParticipantWeek={handleJumpToParticipantWeek}
+          weekStartMs={weekWindow.startMs}
+          weekEndMs={weekWindow.endMs}
         />
 
         <main className="main-calendar-pane">
-          <WeekCalendarGrid
-            weekStartDateStr={weekStartDateStr}
-            displayTimeZone={displayTimeZone}
-            showWeekends={showWeekends}
-            calendars={calendars}
-            events={allEvents}
-            availabilityBlocks={availabilityBlocks}
-            ignoredEventIds={ignoredEventIds}
-            workStartMin={workStartMin}
-            workEndMin={workEndMin}
-            onAddAvailability={handleAddAvailability}
-            onRemoveAvailability={handleRemoveAvailability}
-            onFillFreeDay={(dateStr) => handleFillFreeDays([dateStr])}
-            onClearDay={handleClearDay}
-            onToggleIgnoreEvent={handleToggleIgnoreEvent}
-          />
+          {viewMode === 'edit' ? (
+            <WeekCalendarGrid
+              weekStartDateStr={weekStartDateStr}
+              displayTimeZone={displayTimeZone}
+              showWeekends={showWeekends}
+              calendars={calendars}
+              events={allEvents}
+              availabilityBlocks={availabilityBlocks}
+              ignoredEventIds={ignoredEventIds}
+              workStartMin={workStartMin}
+              workEndMin={workEndMin}
+              onAddAvailability={handleAddAvailability}
+              onRemoveAvailability={handleRemoveAvailability}
+              onFillFreeDay={(dateStr) => handleFillFreeDays([dateStr])}
+              onClearDay={handleClearDay}
+              onToggleIgnoreEvent={handleToggleIgnoreEvent}
+            />
+          ) : (
+            <HeatmapCalendarGrid
+              weekStartDateStr={weekStartDateStr}
+              displayTimeZone={displayTimeZone}
+              showWeekends={showWeekends}
+              workStartMin={workStartMin}
+              workEndMin={workEndMin}
+              myBlocks={availabilityBlocks}
+              includeMe={includeMeInHeatmap}
+              participants={participants}
+              minOverlap={minOverlap}
+              onChangeMinOverlap={setMinOverlap}
+              onOpenAddParticipant={handleOpenAddParticipant}
+              calendars={calendars}
+              events={allEvents}
+              ignoredEventIds={ignoredEventIds}
+            />
+          )}
         </main>
       </div>
 
@@ -788,10 +960,26 @@ export function App() {
         onAddIcalFile={handleAddIcalFile}
       />
 
+      <AddParticipantDialog
+        open={participantDialogOpen}
+        onOpenChange={setParticipantDialogOpen}
+        editingParticipant={editingParticipant}
+        defaultTimeZone={displayTimeZone}
+        displayTimeZone={displayTimeZone}
+        currentWeekStart={weekStartDateStr}
+        timeZoneOptions={timeZoneOptions}
+        existingCount={participants.length}
+        onSave={handleSaveParticipant}
+      />
+
       <AvailabilityOutputDialog
         open={outputOpen}
         onOpenChange={setOutputOpen}
         blocks={availabilityBlocks}
+        includeMeInHeatmap={includeMeInHeatmap}
+        participants={participants}
+        defaultSource={viewMode === 'heatmap' && participants.length > 0 ? 'shared' : 'mine'}
+        defaultMinOverlap={minOverlap}
         outputTimeZone={outputTimeZone}
         onChangeOutputTimeZone={setOutputTimeZone}
         timeZoneOptions={timeZoneOptions}

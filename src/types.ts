@@ -34,3 +34,31 @@ export interface AvailabilityBlock {
 }
 
 export type BulletFormat = 'standard' | 'compact' | 'markdown';
+
+export type CalendarViewMode = 'edit' | 'heatmap';
+
+export interface ParticipantAvailability {
+  id: string;
+  name: string;
+  color: string;
+  enabled: boolean;
+  /** Original pasted text preserved so the user can edit and re-parse later */
+  rawText: string;
+  /** Fallback IANA time zone used when pasted text omits a time zone */
+  defaultTimeZone: string;
+  /** Reference week start (YYYY-MM-DD) used for weekday-only lines like "Tue 2-4 PM" */
+  referenceWeekStart: string;
+  /** Parsed & merged epoch-ms intervals */
+  blocks: AvailabilityBlock[];
+  updatedAt: number;
+}
+
+export interface HeatmapSegment {
+  startMs: number;
+  endMs: number;
+  availableIds: string[];
+  unavailableIds: string[];
+  count: number;
+  total: number;
+}
+
