@@ -185,7 +185,8 @@ export function mergeAvailabilityBlocks(blocks: AvailabilityBlock[]): Availabili
 export function formatAvailabilityBulletList(
   blocks: AvailabilityBlock[],
   targetTimeZone: string,
-  format: BulletFormat = 'standard'
+  format: BulletFormat = 'standard',
+  headingPrefix = 'Available Times'
 ): string {
   const merged = mergeAvailabilityBlocks(blocks);
   if (merged.length === 0) return '';
@@ -232,9 +233,9 @@ export function formatAvailabilityBulletList(
 
   const lines: string[] = [];
   if (format === 'markdown') {
-    lines.push(`**Available Times (${targetTimeZone} / ${tzAbbr}):**`);
+    lines.push(`**${headingPrefix} (${targetTimeZone} / ${tzAbbr}):**`);
   } else {
-    lines.push(`Available Times (${targetTimeZone} / ${tzAbbr}):`);
+    lines.push(`${headingPrefix} (${targetTimeZone} / ${tzAbbr}):`);
   }
 
   for (const dayStr of sortedDays) {

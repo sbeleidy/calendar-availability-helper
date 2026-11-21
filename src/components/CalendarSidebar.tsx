@@ -5,14 +5,16 @@ import { Switch } from '@base-ui/react/switch';
 import {
   Check,
   ChevronDown,
+  Pencil,
   Plus,
   RefreshCw,
   Sparkles,
   Trash2,
+  Users,
   Wand2,
   X,
 } from 'lucide-react';
-import type { AvailabilityBlock, CalendarSource } from '../types';
+import type { AvailabilityBlock, CalendarSource, ParticipantAvailability } from '../types';
 import { formatMinutesLabel } from '../utils/temporal';
 
 const WORK_TIME_OPTIONS = Array.from({ length: 33 }, (_, i) => 6 * 60 + i * 30); // 6:00 AM .. 10:00 PM
@@ -63,6 +65,16 @@ interface CalendarSidebarProps {
   onToggleDarkMode: (val: boolean) => void;
   highlightColor: HighlightColorId;
   onChangeHighlightColor: (id: HighlightColorId) => void;
+  participants: ParticipantAvailability[];
+  includeMeInHeatmap: boolean;
+  onToggleIncludeMe: (val: boolean) => void;
+  onOpenAddParticipant: () => void;
+  onEditParticipant: (participant: ParticipantAvailability) => void;
+  onToggleParticipant: (id: string) => void;
+  onRemoveParticipant: (id: string) => void;
+  onJumpToParticipantWeek: (participant: ParticipantAvailability) => void;
+  weekStartMs: number;
+  weekEndMs: number;
 }
 
 export function CalendarSidebar({
@@ -90,6 +102,16 @@ export function CalendarSidebar({
   onToggleDarkMode,
   highlightColor,
   onChangeHighlightColor,
+  participants,
+  includeMeInHeatmap,
+  onToggleIncludeMe,
+  onOpenAddParticipant,
+  onEditParticipant,
+  onToggleParticipant,
+  onRemoveParticipant,
+  onJumpToParticipantWeek,
+  weekStartMs,
+  weekEndMs,
 }: CalendarSidebarProps) {
   const totalMinutes = blocks.reduce(
     (acc, b) => acc + Math.round((b.endMs - b.startMs) / 60000),
@@ -214,6 +236,113 @@ export function CalendarSidebar({
             </button>
           )}
         </div>
+      </div>
+
+      <div className="sidebar-divider" />
+
+      <div className="sidebar-section">
+        <div className="sidebar-section-header">
+          <h2 className="sidebar-heading">Others&apos; Availability</h2>
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={onOpenAddParticipant}
+            title="Paste someone's availability"
+            aria-label="Paste someone's availability"
+          >
+            <Plus size={16} />
+          </button>
+        </div>
+
+        {participants.length > 0 ? (
+          <ul className="participant-list">
+            <li className="participant-item">
+              <label className="calendar-checkbox-label">
+                <Checkbox.Root
+                  checked={includeMeInHeatmap}
+                  onCheckedChange={(checked) => onToggleIncludeMe(Boolean(checked))}
+                  className="base-checkbox"
+                  style={{ '--cal-color': 'var(--avail-border)' } as React.CSSProperties}
+                >
+                  <Checkbox.Indicator className="base-checkbox-indicator">
+                    <Check size={12} strokeWidth={3} />
+                  </Checkbox.Indicator>
+                </Checkbox.Root>
+                <span className="calendar-name">Me</span>
+              </label>
+              <span className="participant-count-pill">{availabilityCount}</span>
+            </li>
+
+            {participants.map((p) => {
+              const inThisWeek = p.blocks.some(
+                (b) => b.endMs > weekStartMs && b.startMs < weekEndMs
+              );
+              return (
+                <li key={p.id} className="participant-item">
+                  <label className="calendar-checkbox-label">
+                    <Checkbox.Root
+                      checked={p.enabled}
+                      onCheckedChange={() => onToggleParticipant(p.id)}
+                      className="base-checkbox"
+                      style={{ '--cal-color': p.color } as React.CSSProperties}
+                    >
+                      <Checkbox.Indicator className="base-checkbox-indicator">
+                        <Check size={12} strokeWidth={3} />
+                      </Checkbox.Indicator>
+                    </Checkbox.Root>
+                    <span className="calendar-name" title={p.name}>
+                      {p.name}
+                    </span>
+                  </label>
+
+                  {!inThisWeek && p.blocks.length > 0 && (
+                    <button
+                      type="button"
+                      className="participant-jump-btn"
+                      onClick={() => onJumpToParticipantWeek(p)}
+                      title={`Jump to week with ${p.name}'s availability`}
+                    >
+                      Jump
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    className="participant-action-btn"
+                    onClick={() => onEditParticipant(p)}
+                    title={`Edit ${p.name}'s pasted availability`}
+                    aria-label={`Edit ${p.name}'s availability`}
+                  >
+                    <Pencil size={12} />
+                  </button>
+
+                  <button
+                    type="button"
+                    className="calendar-remove-btn"
+                    onClick={() => onRemoveParticipant(p.id)}
+                    title={`Remove ${p.name}`}
+                    aria-label={`Remove ${p.name}`}
+                  >
+                    <X size={13} />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className="sidebar-subhint">
+            Paste others&apos; times to find shared availability in the Group Heatmap.
+          </p>
+        )}
+
+        <button
+          type="button"
+          className="btn btn-secondary btn-full btn-sm"
+          onClick={onOpenAddParticipant}
+        >
+          <Users size={14} />
+          Paste Availability
+        </button>
       </div>
 
       <div className="sidebar-divider" />
